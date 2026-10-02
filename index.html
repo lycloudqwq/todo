@@ -10,14 +10,11 @@
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.7/Sortable.min.js"></script>
     <style type="text/tailwindcss">
         :root { color-scheme: light; }
-    * { box-sizing: border-box; }
-    body { margin: 0; color: var(--color-slate-700); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; background: var(--color-cyan-50); background-image: radial-gradient(--alpha(var(--color-cyan-200) / 60%) 0.7px, transparent 0.7px); background-size: 22px 22px; }
+    body { color: var(--color-slate-700); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; background: var(--color-cyan-50); background-image: radial-gradient(--alpha(var(--color-cyan-200) / 60%) 0.7px, transparent 0.7px); background-size: 22px 22px; }
     button, input { font: inherit; }
     button { cursor: pointer; }
     button, input { -webkit-tap-highlight-color: transparent; }
     button:focus-visible { outline: 2px solid var(--color-cyan-600); outline-offset: 3px; }
-    button:disabled { cursor: default; }
-    [hidden] { display: none !important; }
     svg { flex-shrink: 0; }
     .app-shell { height: min(700px, calc(100dvh - 100px)); min-height: 450px; box-shadow: 0 24px 70px -30px --alpha(var(--color-slate-900) / 15%), 0 3px 8px --alpha(var(--color-slate-900) / 5%); }
     .sidebar { width: 258px; background: var(--color-slate-50); }
@@ -195,7 +192,7 @@
             const STORAGE_KEY = 'little-notes.todo.v1';
             const $ = id => document.getElementById(id);
             const ui = {
-                lists: $('list-rows'), todos: $('todo-rows'), title: $('current-list-title'),
+                lists: $('list-rows'), todos: $('todo-rows'), scroll: $('todo-scroll'), title: $('current-list-title'),
                 listTotal: $('list-total'), summary: $('todo-summary'), empty: $('empty-state'),
                 emptyTitle: $('empty-title'), emptyDescription: $('empty-description'),
                 newList: $('new-list-button'), listForm: $('new-list-form'), listInput: $('new-list-name'),
@@ -207,9 +204,10 @@
             let pendingTodoEdit = null;
             const newId = () => globalThis.crypto?.randomUUID?.() || `id-${Date.now()}-${Math.random().toString(36).slice(2)}`;
             const state = loadState();
-            const activeList = () => state.lists.find(list => list.id === state.selectedListId);
             const findList = id => state.lists.find(list => list.id === id);
-            const findTodo = (listId, id) => findList(listId)?.todos.find(todo => todo.id === id);
+            const activeList = () => findList(state.selectedListId);
+            const findTodo = id => activeList()?.todos.find(todo => todo.id === id);
+            const textKey = type => type === 'list' ? 'name' : 'text';
 
             function loadState() {
                 const empty = {version: 1, selectedListId: null, lists: []};
@@ -217,20 +215,21 @@
                     const raw = localStorage.getItem(STORAGE_KEY);
                     if (!raw) return empty;
                     const saved = JSON.parse(raw);
-                    if (!saved || !Array.isArray(saved.lists)) throw new Error('Invalid saved data');
+                    if (!Array.isArray(saved?.lists)) throw new Error('Invalid saved data');
                     const ids = new Set();
-                    const uniqueId = value => {
-                        const id = typeof value === 'string' && value && !ids.has(value) ? value : newId();
+                    const uniqueId = id => {
+                        if (typeof id !== 'string' || !id || ids.has(id)) id = newId();
                         ids.add(id);
                         return id;
                     };
-                    const lists = saved.lists.filter(list => list && typeof list.name === 'string').map(list => ({
+                    const lists = saved.lists.filter(list => typeof list?.name === 'string').map(list => ({
                         id: uniqueId(list.id), name: list.name.trim() || 'Todo',
                         todos: (Array.isArray(list.todos) ? list.todos : [])
-                            .filter(todo => todo && typeof todo.text === 'string' && todo.text.trim())
+                            .filter(todo => typeof todo?.text === 'string' && todo.text.trim())
                             .map(todo => ({id: uniqueId(todo.id), text: todo.text, completed: todo.completed === true}))
                     }));
-                    return {version: 1, lists, selectedListId: lists.some(list => list.id === saved.selectedListId) ? saved.selectedListId : (lists[0]?.id ?? null)};
+                    const keepSelection = lists.some(list => list.id === saved.selectedListId);
+                    return {version: 1, lists, selectedListId: keepSelection ? saved.selectedListId : (lists[0]?.id ?? null)};
                 } catch (error) {
                     console.warn('Could not read saved data.', error);
                     return empty;
@@ -251,62 +250,57 @@
             }
 
             function makeRow(type, item) {
+                const isList = type === 'list';
                 const row = document.createElement('li');
-                row.className = type === 'list' ? 'list-row' : 'todo-row bg-cyan-200/40 hover:bg-cyan-200';
+                row.className = isList ? 'list-row' : 'todo-row bg-cyan-200/40 hover:bg-cyan-200';
                 row.dataset.id = item.id;
-                const remove = `<button type="button" class="icon-button delete-button" data-action="delete" title="${type === 'list' ? 'Delete list and all its todos' : 'Delete todo'}" aria-label="${type === 'list' ? 'Delete list' : 'Delete todo'}">${icon('close', 16)}</button>`;
-                if (type === 'list') {
-                    row.innerHTML = `<div class="min-w-0 flex-1" data-label><button type="button" class="list-name" data-action="text"></button></div><span class="list-count text-[10px] tabular-nums text-slate-400"></span>${remove}`;
-                    row.querySelector('.list-name').textContent = item.name;
-                    row.querySelector('.list-name').title = item.name;
-                } else {
-                    row.innerHTML = `<button type="button" class="check-button" data-action="toggle" role="checkbox" aria-label="Toggle completed">${icon('check', 14)}</button><div class="min-w-0 flex-1" data-label><button type="button" class="todo-text" data-action="text"></button></div>${remove}`;
-                    row.querySelector('.todo-text').textContent = item.text;
-                    updateTodoRow(row, item);
-                }
+                const check = isList ? '' : `<button type="button" class="check-button" data-action="toggle" role="checkbox" aria-label="Toggle completed">${icon('check', 14)}</button>`;
+                const count = isList ? '<span class="list-count text-[10px] tabular-nums text-slate-400"></span>' : '';
+                const remove = `<button type="button" class="icon-button delete-button" data-action="delete" title="${isList ? 'Delete list and all its todos' : 'Delete todo'}" aria-label="Delete ${type}">${icon('close')}</button>`;
+                row.innerHTML = `${check}<div class="min-w-0 flex-1"><button type="button" class="${isList ? 'list-name' : 'todo-text'}" data-action="text"></button></div>${count}${remove}`;
+                const label = row.querySelector('[data-action="text"]');
+                label.textContent = item[textKey(type)];
+                if (isList) label.title = item.name;
+                else updateTodoRow(row, item);
                 return row;
             }
 
             function renderLists() {
                 ui.lists.replaceChildren(...state.lists.map(list => makeRow('list', list)));
-                updateListIndicators();
             }
 
-            function updateListIndicators() {
+            function updateCounts() {
+                const list = activeList();
+                ui.summary.hidden = !list;
+                if (list) ui.summary.textContent = `${list.todos.filter(todo => todo.completed).length} / ${list.todos.length} completed`;
                 ui.listTotal.textContent = String(state.lists.length).padStart(2, '0');
                 for (const row of ui.lists.children) {
                     const list = findList(row.dataset.id);
                     const selected = list.id === state.selectedListId;
                     row.classList.toggle('is-selected', selected);
-                    row.querySelector('.list-name')?.setAttribute('aria-current', String(selected));
+                    row.querySelector('.list-name')?.setAttribute('aria-current', selected);
                     row.querySelector('.list-count').textContent = list.todos.length;
                 }
             }
 
             function updateTodoRow(row, todo) {
                 row.querySelector('.todo-text')?.classList.toggle('is-completed', todo.completed);
-                row.querySelector('.check-button').setAttribute('aria-checked', String(todo.completed));
-            }
-
-            function updateSummary() {
-                const list = activeList();
-                ui.summary.hidden = !list;
-                if (list) ui.summary.textContent = `${list.todos.filter(todo => todo.completed).length} / ${list.todos.length} completed`;
-                updateListIndicators();
+                row.querySelector('.check-button').setAttribute('aria-checked', todo.completed);
             }
 
             function renderTodos() {
                 cancelTodoEdit();
                 const list = activeList();
+                const todos = list?.todos || [];
                 ui.title.textContent = list?.name || 'My Notebook';
                 ui.title.title = list?.name || '';
                 ui.todoForm.hidden = !list;
-                ui.todos.replaceChildren(...(list?.todos || []).map(todo => makeRow('todo', todo)));
-                ui.todos.hidden = !list?.todos.length;
-                ui.empty.hidden = !!list?.todos.length;
+                ui.todos.replaceChildren(...todos.map(todo => makeRow('todo', todo)));
+                ui.todos.hidden = !todos.length;
+                ui.empty.hidden = !!todos.length;
                 ui.emptyTitle.textContent = list ? 'No todos yet' : 'No lists yet';
                 ui.emptyDescription.textContent = list ? 'Add a todo above.' : 'Create a list to get started.';
-                updateSummary();
+                updateCounts();
             }
 
             // 3. Add, select, toggle, and delete.
@@ -317,9 +311,8 @@
                 ui.todoInput.value = '';
                 saveState();
                 // Keep list text nodes in place so a second click can become dblclick.
-                updateListIndicators();
                 renderTodos();
-                $('todo-scroll').scrollTop = 0;
+                ui.scroll.scrollTop = 0;
             }
 
             function showNewList() {
@@ -362,26 +355,24 @@
                 ui.todoInput.value = '';
                 saveState();
                 renderTodos();
-                $('todo-scroll').scrollTop = 0;
+                ui.scroll.scrollTop = 0;
                 ui.todoInput.focus();
             }
 
-            function setCompleted(listId, id, completed) {
-                const todo = findTodo(listId, id);
+            function toggleTodo(row) {
+                // Keyboard activation has no pointerdown to cancel another row's pending edit.
+                if (pendingTodoEdit && row.contains(pendingTodoEdit.text)) cancelTodoEdit();
+                const todo = findTodo(row.dataset.id);
                 if (!todo) return;
-                todo.completed = completed;
+                todo.completed = !todo.completed;
                 saveState();
-                if (state.selectedListId === listId) {
-                    const row = [...ui.todos.children].find(row => row.dataset.id === id);
-                    if (row) updateTodoRow(row, todo);
-                    updateSummary();
-                }
+                updateTodoRow(row, todo);
+                updateCounts();
             }
 
             function deleteItem(type, id) {
                 finishEditing(true);
                 if (type === 'list') {
-                    findList(id)?.todos.forEach(todo => cancelTodoEdit(todo.id));
                     state.lists = state.lists.filter(list => list.id !== id);
                     if (state.selectedListId === id) {
                         state.selectedListId = state.lists[0]?.id ?? null;
@@ -389,7 +380,6 @@
                     }
                     renderLists();
                 } else {
-                    cancelTodoEdit(id);
                     const list = activeList();
                     if (list) list.todos = list.todos.filter(todo => todo.id !== id);
                 }
@@ -400,48 +390,39 @@
             // 4. Text click/double-click arbitration and inline editing.
             // Wait for the double-click window before creating an editor. A second
             // mouse press cancels the pending edit, even if its release happens later.
-            function queueTodoEdit(event, id) {
-                if (event.detail > 1) return cancelTodoEdit(id);
+            function queueTodoEdit(event, text) {
                 cancelTodoEdit();
-                const listId = state.selectedListId;
-                if (!findTodo(listId, id)) return;
-                if (event.detail === 0) return startEditing('todo', id);
+                if (event.detail > 1) return;
+                const row = text.closest('[data-id]');
+                if (event.detail === 0) return startEditing('todo', row);
                 pendingTodoEdit = {
-                    id,
-                    timer: setTimeout(() => {
-                        pendingTodoEdit = null;
-                        if (state.selectedListId === listId) startEditing('todo', id);
-                    }, TODO_EDIT_DELAY)
+                    text,
+                    timer: setTimeout(() => startEditing('todo', row), TODO_EDIT_DELAY)
                 };
             }
 
-            function cancelTodoEdit(id) {
-                if (!pendingTodoEdit || (id !== undefined && pendingTodoEdit.id !== id)) return;
+            function cancelTodoEdit() {
+                if (!pendingTodoEdit) return;
                 clearTimeout(pendingTodoEdit.timer);
                 pendingTodoEdit = null;
             }
 
-            function startEditing(type, id) {
+            function startEditing(type, row) {
                 cancelTodoEdit();
                 finishEditing(true);
-                const listId = state.selectedListId;
-                const item = type === 'list' ? findList(id) : findTodo(listId, id);
+                const id = row.dataset.id;
+                const item = type === 'list' ? findList(id) : findTodo(id);
                 if (!item) return;
-                const container = type === 'list' ? ui.lists : ui.todos;
-                const row = [...container.children].find(row => row.dataset.id === id);
-                if (!row) return;
-                const slot = row.querySelector('[data-label]');
-                const label = slot.firstElementChild;
+                const label = row.querySelector('[data-action="text"]');
                 const input = document.createElement('input');
                 input.type = 'text';
                 input.className = 'edit-input';
-                input.value = type === 'list' ? item.name : item.text;
+                input.value = item[textKey(type)];
                 input.setAttribute('aria-label', type === 'list' ? 'Edit list name' : 'Edit todo');
                 input.autocomplete = 'off';
-                editing = {type, id, listId, input, row, slot, label, item};
-                slot.replaceChildren(input);
+                editing = {type, item, input, label};
+                label.replaceWith(input);
                 input.addEventListener('keydown', event => {
-                    event.stopPropagation();
                     if (event.isComposing || event.keyCode === 229) return;
                     if (event.key === 'Enter' || event.key === 'Escape') {
                         event.preventDefault();
@@ -456,55 +437,46 @@
 
             function finishEditing(save) {
                 if (!editing) return;
-                const edit = editing;
+                const {type, item, input, label} = editing;
                 editing = null; // Replacing a focused input may trigger another blur.
-                const value = edit.input.value.trim();
+                const key = textKey(type);
+                const value = input.value.trim();
                 if (save && value) {
-                    edit.item[edit.type === 'list' ? 'name' : 'text'] = value;
+                    item[key] = value;
                     saveState();
                 }
-                const text = edit.type === 'list' ? edit.item.name : edit.item.text;
-                edit.label.textContent = text;
-                if (edit.type === 'list') edit.label.title = text;
-                edit.slot.replaceChildren(edit.label);
-                if (edit.type === 'list' && edit.id === state.selectedListId) {
+                const text = item[key];
+                label.textContent = text;
+                if (type === 'list') label.title = text;
+                input.replaceWith(label);
+                if (type === 'list' && item.id === state.selectedListId) {
                     ui.title.textContent = text;
                     ui.title.title = text;
                 }
             }
 
             function bindRowActions(container, type) {
-                container.addEventListener('mousedown', event => {
-                    if (type !== 'todo' || event.button !== 0 || event.detail < 2) return;
-                    const text = event.target.closest('.todo-text');
-                    if (text) cancelTodoEdit(text.closest('[data-id]').dataset.id);
-                });
                 container.addEventListener('click', event => {
-                    if (Date.now() < suppressClicksUntil || event.target.closest('input')) return;
+                    if (Date.now() < suppressClicksUntil) return;
                     const button = event.target.closest('[data-action]');
                     const row = button?.closest('[data-id]');
                     if (!row) return;
-                    const id = row.dataset.id;
-                    if (button.dataset.action === 'delete') return deleteItem(type, id);
-                    if (button.dataset.action === 'toggle') {
-                        cancelTodoEdit(id);
-                        const todo = findTodo(state.selectedListId, id);
-                        if (todo) setCompleted(state.selectedListId, id, !todo.completed);
-                    } else if (type === 'list') selectList(id);
-                    else queueTodoEdit(event, id);
+                    const action = button.dataset.action;
+                    if (action === 'delete') deleteItem(type, row.dataset.id);
+                    else if (action === 'toggle') toggleTodo(row);
+                    else if (action === 'text') {
+                        if (type === 'list') selectList(row.dataset.id);
+                        else queueTodoEdit(event, button);
+                    }
                 });
                 container.addEventListener('dblclick', event => {
                     if (Date.now() < suppressClicksUntil || !event.target.closest('[data-action="text"]')) return;
                     event.preventDefault();
-                    const id = event.target.closest('[data-id]').dataset.id;
+                    const row = event.target.closest('[data-id]');
                     if (type === 'list') {
-                        selectList(id);
-                        startEditing(type, id);
-                    } else {
-                        cancelTodoEdit(id);
-                        const todo = findTodo(state.selectedListId, id);
-                        if (todo) setCompleted(state.selectedListId, id, !todo.completed);
-                    }
+                        selectList(row.dataset.id);
+                        startEditing('list', row);
+                    } else toggleTodo(row);
                 });
             }
 
@@ -515,11 +487,8 @@
                     console.warn('SortableJS could not load. Check your network connection.');
                     return;
                 }
-                let sourceListId = null;
                 const sortable = Sortable.create(container, {
                     group: {name: type, pull: false, put: false},
-                    draggable: type === 'list' ? '.list-row' : '.todo-row',
-                    dataIdAttr: 'data-id',
                     direction: 'vertical',
                     animation: matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 150,
                     ghostClass: 'sort-placeholder',
@@ -533,21 +502,18 @@
                     // controls and active editors available for their normal actions.
                     filter: event => !!editing || !!event.target.closest('input, [data-action="delete"], [data-action="toggle"]'),
                     preventOnFilter: false,
-                    onStart(event) {
-                        sourceListId = state.selectedListId;
-                        if (type === 'todo') cancelTodoEdit(event.item.dataset.id);
+                    onStart() {
+                        if (type === 'todo') cancelTodoEdit();
                     },
                     onEnd(event) {
                         suppressClicksUntil = Date.now() + 150;
                         if (event.oldDraggableIndex === event.newDraggableIndex) return;
-                        const list = findList(sourceListId);
-                        const items = type === 'list' ? state.lists : list?.todos;
+                        const items = type === 'list' ? state.lists : activeList()?.todos;
                         if (!items) return;
                         const byId = new Map(items.map(item => [item.id, item]));
                         const ordered = sortable.toArray().map(id => byId.get(id));
-                        if (ordered.length !== items.length || ordered.some(item => !item)) return;
-                        if (type === 'list') state.lists = ordered;
-                        else list.todos = ordered;
+                        if (!byId.has(event.item.dataset.id) || ordered.length !== items.length || ordered.some(item => !item)) return;
+                        items.splice(0, items.length, ...ordered);
                         saveState();
                     }
                 });
@@ -569,10 +535,11 @@
             }
             bindRowActions(ui.lists, 'list');
             bindRowActions(ui.todos, 'todo');
+            ui.todos.addEventListener('mousedown', event => {
+                if (event.button === 0 && event.detail > 1) cancelTodoEdit();
+            });
             document.addEventListener('pointerdown', event => {
-                if (!pendingTodoEdit) return;
-                const text = event.target.closest('.todo-text');
-                if (text?.closest('[data-id]')?.dataset.id !== pendingTodoEdit.id) cancelTodoEdit();
+                if (pendingTodoEdit && !pendingTodoEdit.text.contains(event.target)) cancelTodoEdit();
             });
             window.addEventListener('pagehide', () => {
                 finishEditing(true);
