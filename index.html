@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="oklch(98.4% 0.019 200.873)">
+    <title>Todo</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.7/Sortable.min.js"></script>
+    <style type="text/tailwindcss">
+        :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: var(--color-slate-700); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; background: var(--color-cyan-50); background-image: radial-gradient(--alpha(var(--color-cyan-200) / 60%) 0.7px, transparent 0.7px); background-size: 22px 22px; }
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+    button, input { -webkit-tap-highlight-color: transparent; }
+    button:focus-visible { outline: 2px solid var(--color-cyan-600); outline-offset: 3px; }
+    button:disabled { cursor: default; }
+    [hidden] { display: none !important; }
+    svg { flex-shrink: 0; }
+    .app-shell { height: min(700px, calc(100dvh - 100px)); min-height: 450px; box-shadow: 0 24px 70px -30px --alpha(var(--color-slate-900) / 15%), 0 3px 8px --alpha(var(--color-slate-900) / 5%); }
+    .sidebar { width: 258px; background: var(--color-slate-50); }
+    .paper { background: var(--color-stone-50); }
+    .paper::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 5px; background: repeating-linear-gradient(90deg, var(--color-cyan-100) 0 16px, var(--color-slate-100) 16px 32px); }
+    .binding { position: absolute; z-index: 2; top: 36px; bottom: 36px; left: 250px; display: flex; flex-direction: column; justify-content: space-between; pointer-events: none; }
+    .binding span { width: 16px; height: 5px; border-radius: 4px; background: var(--color-slate-300); box-shadow: 0 1px 1px var(--color-white); }
+    .scroll-area { scrollbar-width: thin; scrollbar-color: var(--color-slate-300) transparent; overscroll-behavior: contain; }
+    .list-row { position: relative; display: flex; align-items: center; gap: 7px; padding: 3px 8px; margin: 5px 4px; border: 1px solid transparent; border-radius: 9px; min-height: 36px; transition: background .15s, border-color .15s; }
+    .list-row:hover { background: var(--color-slate-100); }
+    .list-row.is-selected { background: var(--color-cyan-100); border-color: var(--color-cyan-200); }
+    .list-name { display: block; width: 100%; padding: 2px 0; text-align: left; color: var(--color-slate-700); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .list-name:hover { color: var(--color-cyan-700); }
+    .is-selected .list-name { color: var(--color-cyan-700); font-weight: 600; }
+    .list-row, .todo-row, .list-name, .todo-text { cursor: grab; }
+    .list-row:active, .todo-row:active, .list-name:active, .todo-text:active { cursor: grabbing; }
+    .icon-button { width: 28px; height: 28px; border-radius: 6px; display: inline-flex; justify-content: center; align-items: center; flex-shrink: 0; transition: background .15s, color .15s; }
+    .add-button { background: var(--color-green-500); color: var(--color-white); transition: background .15s; }
+    .add-button:hover { background: var(--color-green-600); }
+    #new-todo-form { margin-inline: 8px; }
+    .delete-button { color: var(--color-red-500); }
+    .delete-button svg { stroke-width: 2.8; }
+    .delete-button:hover { background: var(--color-red-50); color: var(--color-red-600); }
+    .todo-row { position: relative; display: flex; gap: 14px; align-items: center; min-height: 44px; padding: 5px 10px; margin: 0 8px 8px; border: 1px solid var(--color-slate-200); border-radius: 10px; transition: background .15s, border-color .15s; }
+    .todo-row:hover { border-color: var(--color-slate-300); }
+    .todo-text { width: 100%; text-align: left; padding: 3px 0; color: var(--color-slate-700); font-size: 15px; line-height: 1.65; overflow-wrap: anywhere; white-space: pre-wrap; }
+    .todo-text.is-completed { text-decoration: line-through; text-decoration-thickness: 1.5px; }
+    .check-button { display: flex; align-items: center; justify-content: center; width: 20px; height: 20px; border: 1.5px solid var(--color-slate-300); border-radius: 50%; color: var(--color-white); flex-shrink: 0; transition: background .15s, border-color .15s; }
+    .check-button svg { visibility: hidden; }
+    .check-button:hover { border-color: var(--color-cyan-600); background: var(--color-cyan-50); }
+    .check-button[aria-checked="true"] { background: var(--color-cyan-600); border-color: var(--color-cyan-600); }
+    .check-button[aria-checked="true"]:hover { background: var(--color-cyan-700); }
+    .check-button[aria-checked="true"] svg { visibility: visible; }
+    .edit-input { width: 100%; min-width: 0; padding: 4px 6px; border: 1px solid var(--color-cyan-600); border-radius: 5px; outline: none; background: var(--color-white); color: var(--color-slate-700); font-size: 14px; box-shadow: 0 0 0 3px --alpha(var(--color-cyan-500) / 10%); }
+    .todo-row .edit-input { font-size: 15px; line-height: 1.65; }
+    .is-dragging { opacity: .35; }
+    .sort-placeholder { opacity: .4; background: var(--color-cyan-100) !important; outline: 1px dashed var(--color-cyan-500); outline-offset: -1px; }
+    .sort-chosen { box-shadow: 0 4px 14px --alpha(var(--color-slate-900) / 10%); }
+    @media (max-width: 640px) {
+      .app-shell { height: min(740px, calc(100dvh - 32px)); min-height: 430px; }
+      .sidebar { width: 150px; }
+      .binding { display: none; }
+      .list-row { padding: 3px; margin-inline: 2px; gap: 4px; }
+      .list-row .list-count { display: none; }
+      .list-row .icon-button { width: 23px; }
+      .todo-row { gap: 8px; margin-inline: 2px; }
+      #new-todo-form { margin-inline: 2px; }
+      .todo-text { font-size: 14px; }
+    }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; } }
+  </style>
+</head>
+
+<body class="min-h-dvh flex items-center justify-center p-4 sm:p-8 antialiased">
+    <!-- Reusable inline icons keep this app entirely in one file. -->
+    <svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+        <symbol id="i-plus" viewBox="0 0 24 24">
+            <path d="M12 5v14M5 12h14" />
+        </symbol>
+        <symbol id="i-check" viewBox="0 0 24 24">
+            <path d="m5 12 4 4L19 6" />
+        </symbol>
+        <symbol id="i-close" viewBox="0 0 24 24">
+            <path d="m6 6 12 12M6 18 18 6" />
+        </symbol>
+        <symbol id="i-book" viewBox="0 0 24 24">
+            <rect x="5" y="3" width="15" height="18" rx="3" />
+            <path d="M9 3v18M3 7h4M3 12h4M3 17h4M12 8h5M12 12h4" />
+        </symbol>
+    </svg>
+
+    <main class="app-shell relative flex w-full max-w-[1060px] overflow-hidden rounded-2xl border border-white/80"
+        aria-label="Little Notes todo app">
+        <div class="binding" aria-hidden="true">
+            <span></span><span></span><span></span><span></span><span></span><span></span>
+        </div>
+        <aside class="sidebar flex shrink-0 flex-col border-r border-slate-200">
+            <header class="px-4 pt-8 pb-9 sm:px-6">
+                <div class="flex items-center gap-3">
+                    <span
+                        class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-cyan-600 text-white shadow-sm">
+                        <svg width="23" height="23" fill="none" stroke="currentColor" stroke-width="1.6"
+                            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <use href="#i-book" />
+                        </svg>
+                    </span>
+                    <h1 class="text-base font-semibold leading-snug sm:text-[19px]">Todo</h1>
+                </div>
+            </header>
+
+            <div class="mb-3 flex items-center justify-between px-4 sm:px-6">
+                <h2 class="text-[11px] font-semibold tracking-[.15em] text-slate-500">MY LISTS</h2>
+                <span id="list-total" class="text-[11px] tabular-nums text-slate-400">0</span>
+            </div>
+            <nav class="scroll-area min-h-0 flex-1 overflow-y-auto px-2 pb-5 sm:px-4" aria-label="Todo Lists">
+                <ol id="list-rows" class="m-0 list-none p-0" aria-label="Lists; drag to reorder"></ol>
+                <div class="mt-3 px-1">
+                    <button id="new-list-button" type="button"
+                        class="add-button flex h-[54px] w-full items-center justify-center gap-1.5 rounded-[18px] px-2 text-center text-base font-medium whitespace-nowrap sm:text-lg">
+                        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round" aria-hidden="true">
+                            <use href="#i-plus" />
+                        </svg><span>New List</span>
+                    </button>
+                    <form id="new-list-form" hidden
+                        class="flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1">
+                        <label for="new-list-name" class="sr-only">New list name</label>
+                        <input id="new-list-name"
+                            class="min-w-0 flex-1 rounded border border-slate-300 px-2 py-2 text-sm outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100"
+                            value="Todo" autocomplete="off" required>
+                        <button type="submit" class="icon-button add-button" title="Create list"
+                            aria-label="Create list"><svg width="17" height="17" fill="none" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                                <use href="#i-check" />
+                            </svg></button>
+                        <button id="cancel-new-list" type="button" class="icon-button delete-button" title="Cancel"
+                            aria-label="Cancel new list"><svg width="17" height="17" fill="none" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                                <use href="#i-close" />
+                            </svg></button>
+                    </form>
+                </div>
+            </nav>
+        </aside>
+
+        <section class="paper relative flex min-w-0 flex-1 flex-col" aria-label="Todo Items">
+            <header class="shrink-0 px-5 pt-9 sm:px-10 sm:pt-10">
+                <div class="flex min-h-10 flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                    <h2 id="current-list-title"
+                        class="min-w-0 basis-full truncate text-[25px] font-semibold tracking-tight sm:basis-auto sm:text-[28px]">
+                        My Notebook</h2>
+                    <span id="todo-summary"
+                        class="shrink-0 rounded-full bg-slate-100 px-3 py-1.5 text-[11px] text-slate-500" hidden></span>
+                </div>
+                <form id="new-todo-form" class="mt-7 mb-3 flex items-center gap-3" hidden>
+                    <label for="new-todo-text" class="sr-only">New todo</label>
+                    <input id="new-todo-text"
+                        class="h-9 min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-4 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100"
+                        placeholder="Add a todo..." autocomplete="off" required>
+                    <button type="submit"
+                        class="add-button flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
+                        title="Add todo (Enter)" aria-label="Add todo"><svg width="21" height="21" fill="none"
+                            stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                            <use href="#i-plus" />
+                        </svg></button>
+                </form>
+            </header>
+
+            <div id="todo-scroll" class="scroll-area mx-5 mb-5 min-h-0 flex-1 overflow-y-auto sm:mx-10 sm:mb-8">
+                <ol id="todo-rows" class="m-0 list-none p-0 pt-1 pb-2" aria-label="Todos; drag to reorder"></ol>
+                <div id="empty-state"
+                    class="flex h-full min-h-60 flex-col items-center justify-center pb-8 text-center">
+                    <div class="relative mb-6 flex h-[84px] w-[76px] rotate-[-7deg] items-center justify-center rounded-xl border border-stone-200 bg-stone-100 text-stone-400 shadow-[5px_5px_0] shadow-stone-200"
+                        aria-hidden="true">
+                        <span class="absolute -top-2.5 left-4 h-5 w-11 rotate-[3deg] bg-cyan-100/80"></span>
+                        <svg width="37" height="37" fill="none" stroke="currentColor" stroke-width="1.2"
+                            stroke-linecap="round" stroke-linejoin="round">
+                            <use href="#i-book" />
+                        </svg>
+                    </div>
+                    <h3 id="empty-title" class="text-[17px] font-medium text-slate-600">No lists yet</h3>
+                    <p id="empty-description" class="mt-2 max-w-64 text-xs leading-6 text-slate-400">Create a list to
+                        get started.</p>
+                </div>
+            </div>
+
+        </section>
+    </main>
+
+    <script>
+        (() => {
+            'use strict';
+
+            // 1. Data and persistence. Array order is the displayed order.
+            const STORAGE_KEY = 'little-notes.todo.v1';
+            const $ = id => document.getElementById(id);
+            const ui = {
+                lists: $('list-rows'), todos: $('todo-rows'), title: $('current-list-title'),
+                listTotal: $('list-total'), summary: $('todo-summary'), empty: $('empty-state'),
+                emptyTitle: $('empty-title'), emptyDescription: $('empty-description'),
+                newList: $('new-list-button'), listForm: $('new-list-form'), listInput: $('new-list-name'),
+                todoForm: $('new-todo-form'), todoInput: $('new-todo-text')
+            };
+            let editing = null;
+            let suppressClicksUntil = 0;
+            const TODO_EDIT_DELAY = 120;
+            let pendingTodoEdit = null;
+            const newId = () => globalThis.crypto?.randomUUID?.() || `id-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+            const state = loadState();
+            const activeList = () => state.lists.find(list => list.id === state.selectedListId);
+            const findList = id => state.lists.find(list => list.id === id);
+            const findTodo = (listId, id) => findList(listId)?.todos.find(todo => todo.id === id);
+
+            function loadState() {
+                const empty = {version: 1, selectedListId: null, lists: []};
+                try {
+                    const raw = localStorage.getItem(STORAGE_KEY);
+                    if (!raw) return empty;
+                    const saved = JSON.parse(raw);
+                    if (!saved || !Array.isArray(saved.lists)) throw new Error('Invalid saved data');
+                    const ids = new Set();
+                    const uniqueId = value => {
+                        const id = typeof value === 'string' && value && !ids.has(value) ? value : newId();
+                        ids.add(id);
+                        return id;
+                    };
+                    const lists = saved.lists.filter(list => list && typeof list.name === 'string').map(list => ({
+                        id: uniqueId(list.id), name: list.name.trim() || 'Todo',
+                        todos: (Array.isArray(list.todos) ? list.todos : [])
+                            .filter(todo => todo && typeof todo.text === 'string' && todo.text.trim())
+                            .map(todo => ({id: uniqueId(todo.id), text: todo.text, completed: todo.completed === true}))
+                    }));
+                    return {version: 1, lists, selectedListId: lists.some(list => list.id === saved.selectedListId) ? saved.selectedListId : (lists[0]?.id ?? null)};
+                } catch (error) {
+                    console.warn('Could not read saved data.', error);
+                    return empty;
+                }
+            }
+
+            function saveState() {
+                try {
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+                } catch (error) {
+                    console.warn('Could not save data. Check browser storage settings.', error);
+                }
+            }
+
+            // 2. Rendering. User content is always assigned with textContent/value.
+            function icon(name, size = 16) {
+                return `<svg width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-${name}"/></svg>`;
+            }
+
+            function makeRow(type, item) {
+                const row = document.createElement('li');
+                row.className = type === 'list' ? 'list-row' : 'todo-row bg-cyan-200/40 hover:bg-cyan-200';
+                row.dataset.id = item.id;
+                const remove = `<button type="button" class="icon-button delete-button" data-action="delete" title="${type === 'list' ? 'Delete list and all its todos' : 'Delete todo'}" aria-label="${type === 'list' ? 'Delete list' : 'Delete todo'}">${icon('close', 16)}</button>`;
+                if (type === 'list') {
+                    row.innerHTML = `<div class="min-w-0 flex-1" data-label><button type="button" class="list-name" data-action="text"></button></div><span class="list-count text-[10px] tabular-nums text-slate-400"></span>${remove}`;
+                    row.querySelector('.list-name').textContent = item.name;
+                    row.querySelector('.list-name').title = item.name;
+                } else {
+                    row.innerHTML = `<button type="button" class="check-button" data-action="toggle" role="checkbox" aria-label="Toggle completed">${icon('check', 14)}</button><div class="min-w-0 flex-1" data-label><button type="button" class="todo-text" data-action="text"></button></div>${remove}`;
+                    row.querySelector('.todo-text').textContent = item.text;
+                    updateTodoRow(row, item);
+                }
+                return row;
+            }
+
+            function renderLists() {
+                ui.lists.replaceChildren(...state.lists.map(list => makeRow('list', list)));
+                updateListIndicators();
+            }
+
+            function updateListIndicators() {
+                ui.listTotal.textContent = String(state.lists.length).padStart(2, '0');
+                for (const row of ui.lists.children) {
+                    const list = findList(row.dataset.id);
+                    const selected = list.id === state.selectedListId;
+                    row.classList.toggle('is-selected', selected);
+                    row.querySelector('.list-name')?.setAttribute('aria-current', String(selected));
+                    row.querySelector('.list-count').textContent = list.todos.length;
+                }
+            }
+
+            function updateTodoRow(row, todo) {
+                row.querySelector('.todo-text')?.classList.toggle('is-completed', todo.completed);
+                row.querySelector('.check-button').setAttribute('aria-checked', String(todo.completed));
+            }
+
+            function updateSummary() {
+                const list = activeList();
+                ui.summary.hidden = !list;
+                if (list) ui.summary.textContent = `${list.todos.filter(todo => todo.completed).length} / ${list.todos.length} completed`;
+                updateListIndicators();
+            }
+
+            function renderTodos() {
+                cancelTodoEdit();
+                const list = activeList();
+                ui.title.textContent = list?.name || 'My Notebook';
+                ui.title.title = list?.name || '';
+                ui.todoForm.hidden = !list;
+                ui.todos.replaceChildren(...(list?.todos || []).map(todo => makeRow('todo', todo)));
+                ui.todos.hidden = !list?.todos.length;
+                ui.empty.hidden = !!list?.todos.length;
+                ui.emptyTitle.textContent = list ? 'No todos yet' : 'No lists yet';
+                ui.emptyDescription.textContent = list ? 'Add a todo above.' : 'Create a list to get started.';
+                updateSummary();
+            }
+
+            // 3. Add, select, toggle, and delete.
+            function selectList(id) {
+                if (state.selectedListId === id) return;
+                finishEditing(true);
+                state.selectedListId = id;
+                ui.todoInput.value = '';
+                saveState();
+                // Keep list text nodes in place so a second click can become dblclick.
+                updateListIndicators();
+                renderTodos();
+                $('todo-scroll').scrollTop = 0;
+            }
+
+            function showNewList() {
+                finishEditing(true);
+                ui.newList.hidden = true;
+                ui.listForm.hidden = false;
+                ui.listInput.value = 'Todo';
+                ui.listInput.focus();
+                ui.listInput.select();
+            }
+
+            function hideNewList() {
+                ui.listForm.hidden = true;
+                ui.newList.hidden = false;
+            }
+
+            function addList(event) {
+                event.preventDefault();
+                const name = ui.listInput.value.trim();
+                if (!name) return ui.listInput.focus();
+                const list = {id: newId(), name, todos: []};
+                state.lists.push(list);
+                state.selectedListId = list.id;
+                hideNewList();
+                ui.todoInput.value = '';
+                saveState();
+                renderLists();
+                renderTodos();
+                ui.lists.lastElementChild?.scrollIntoView({block: 'nearest'});
+                ui.todoInput.focus();
+            }
+
+            function addTodo(event) {
+                event.preventDefault();
+                const text = ui.todoInput.value.trim();
+                const list = activeList();
+                if (!list || !text) return ui.todoInput.focus();
+                finishEditing(true);
+                list.todos.unshift({id: newId(), text, completed: false});
+                ui.todoInput.value = '';
+                saveState();
+                renderTodos();
+                $('todo-scroll').scrollTop = 0;
+                ui.todoInput.focus();
+            }
+
+            function setCompleted(listId, id, completed) {
+                const todo = findTodo(listId, id);
+                if (!todo) return;
+                todo.completed = completed;
+                saveState();
+                if (state.selectedListId === listId) {
+                    const row = [...ui.todos.children].find(row => row.dataset.id === id);
+                    if (row) updateTodoRow(row, todo);
+                    updateSummary();
+                }
+            }
+
+            function deleteItem(type, id) {
+                finishEditing(true);
+                if (type === 'list') {
+                    findList(id)?.todos.forEach(todo => cancelTodoEdit(todo.id));
+                    state.lists = state.lists.filter(list => list.id !== id);
+                    if (state.selectedListId === id) {
+                        state.selectedListId = state.lists[0]?.id ?? null;
+                        ui.todoInput.value = '';
+                    }
+                    renderLists();
+                } else {
+                    cancelTodoEdit(id);
+                    const list = activeList();
+                    if (list) list.todos = list.todos.filter(todo => todo.id !== id);
+                }
+                saveState();
+                renderTodos();
+            }
+
+            // 4. Text click/double-click arbitration and inline editing.
+            // Wait for the double-click window before creating an editor. A second
+            // mouse press cancels the pending edit, even if its release happens later.
+            function queueTodoEdit(event, id) {
+                if (event.detail > 1) return cancelTodoEdit(id);
+                cancelTodoEdit();
+                const listId = state.selectedListId;
+                if (!findTodo(listId, id)) return;
+                if (event.detail === 0) return startEditing('todo', id);
+                pendingTodoEdit = {
+                    id,
+                    timer: setTimeout(() => {
+                        pendingTodoEdit = null;
+                        if (state.selectedListId === listId) startEditing('todo', id);
+                    }, TODO_EDIT_DELAY)
+                };
+            }
+
+            function cancelTodoEdit(id) {
+                if (!pendingTodoEdit || (id !== undefined && pendingTodoEdit.id !== id)) return;
+                clearTimeout(pendingTodoEdit.timer);
+                pendingTodoEdit = null;
+            }
+
+            function startEditing(type, id) {
+                cancelTodoEdit();
+                finishEditing(true);
+                const listId = state.selectedListId;
+                const item = type === 'list' ? findList(id) : findTodo(listId, id);
+                if (!item) return;
+                const container = type === 'list' ? ui.lists : ui.todos;
+                const row = [...container.children].find(row => row.dataset.id === id);
+                if (!row) return;
+                const slot = row.querySelector('[data-label]');
+                const label = slot.firstElementChild;
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.className = 'edit-input';
+                input.value = type === 'list' ? item.name : item.text;
+                input.setAttribute('aria-label', type === 'list' ? 'Edit list name' : 'Edit todo');
+                input.autocomplete = 'off';
+                editing = {type, id, listId, input, row, slot, label, item};
+                slot.replaceChildren(input);
+                input.addEventListener('keydown', event => {
+                    event.stopPropagation();
+                    if (event.isComposing || event.keyCode === 229) return;
+                    if (event.key === 'Enter' || event.key === 'Escape') {
+                        event.preventDefault();
+                        finishEditing(event.key === 'Enter');
+                        label.focus();
+                    }
+                });
+                input.addEventListener('blur', () => finishEditing(true));
+                input.focus();
+                input.select();
+            }
+
+            function finishEditing(save) {
+                if (!editing) return;
+                const edit = editing;
+                editing = null; // Replacing a focused input may trigger another blur.
+                const value = edit.input.value.trim();
+                if (save && value) {
+                    edit.item[edit.type === 'list' ? 'name' : 'text'] = value;
+                    saveState();
+                }
+                const text = edit.type === 'list' ? edit.item.name : edit.item.text;
+                edit.label.textContent = text;
+                if (edit.type === 'list') edit.label.title = text;
+                edit.slot.replaceChildren(edit.label);
+                if (edit.type === 'list' && edit.id === state.selectedListId) {
+                    ui.title.textContent = text;
+                    ui.title.title = text;
+                }
+            }
+
+            function bindRowActions(container, type) {
+                container.addEventListener('mousedown', event => {
+                    if (type !== 'todo' || event.button !== 0 || event.detail < 2) return;
+                    const text = event.target.closest('.todo-text');
+                    if (text) cancelTodoEdit(text.closest('[data-id]').dataset.id);
+                });
+                container.addEventListener('click', event => {
+                    if (Date.now() < suppressClicksUntil || event.target.closest('input')) return;
+                    const button = event.target.closest('[data-action]');
+                    const row = button?.closest('[data-id]');
+                    if (!row) return;
+                    const id = row.dataset.id;
+                    if (button.dataset.action === 'delete') return deleteItem(type, id);
+                    if (button.dataset.action === 'toggle') {
+                        cancelTodoEdit(id);
+                        const todo = findTodo(state.selectedListId, id);
+                        if (todo) setCompleted(state.selectedListId, id, !todo.completed);
+                    } else if (type === 'list') selectList(id);
+                    else queueTodoEdit(event, id);
+                });
+                container.addEventListener('dblclick', event => {
+                    if (Date.now() < suppressClicksUntil || !event.target.closest('[data-action="text"]')) return;
+                    event.preventDefault();
+                    const id = event.target.closest('[data-id]').dataset.id;
+                    if (type === 'list') {
+                        selectList(id);
+                        startEditing(type, id);
+                    } else {
+                        cancelTodoEdit(id);
+                        const todo = findTodo(state.selectedListId, id);
+                        if (todo) setCompleted(state.selectedListId, id, !todo.completed);
+                    }
+                });
+            }
+
+            // 5. SortableJS owns drag handling, animation, placeholders, and scrolling.
+            // Instances stay on the containers when their rows are re-rendered.
+            function bindSortable(container, type) {
+                if (!window.Sortable) {
+                    console.warn('SortableJS could not load. Check your network connection.');
+                    return;
+                }
+                let sourceListId = null;
+                const sortable = Sortable.create(container, {
+                    group: {name: type, pull: false, put: false},
+                    draggable: type === 'list' ? '.list-row' : '.todo-row',
+                    dataIdAttr: 'data-id',
+                    direction: 'vertical',
+                    animation: matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 150,
+                    ghostClass: 'sort-placeholder',
+                    chosenClass: 'sort-chosen',
+                    dragClass: 'is-dragging',
+                    delay: 100,
+                    delayOnTouchOnly: true,
+                    touchStartThreshold: 4,
+                    fallbackTolerance: 4,
+                    // The full row, including its text, can be dragged. Keep dedicated
+                    // controls and active editors available for their normal actions.
+                    filter: event => !!editing || !!event.target.closest('input, [data-action="delete"], [data-action="toggle"]'),
+                    preventOnFilter: false,
+                    onStart(event) {
+                        sourceListId = state.selectedListId;
+                        if (type === 'todo') cancelTodoEdit(event.item.dataset.id);
+                    },
+                    onEnd(event) {
+                        suppressClicksUntil = Date.now() + 150;
+                        if (event.oldDraggableIndex === event.newDraggableIndex) return;
+                        const list = findList(sourceListId);
+                        const items = type === 'list' ? state.lists : list?.todos;
+                        if (!items) return;
+                        const byId = new Map(items.map(item => [item.id, item]));
+                        const ordered = sortable.toArray().map(id => byId.get(id));
+                        if (ordered.length !== items.length || ordered.some(item => !item)) return;
+                        if (type === 'list') state.lists = ordered;
+                        else list.todos = ordered;
+                        saveState();
+                    }
+                });
+            }
+
+            // 6. Initialize and keep lifecycle handlers in one place.
+            ui.newList.addEventListener('click', showNewList);
+            $('cancel-new-list').addEventListener('click', () => {hideNewList(); ui.newList.focus();});
+            ui.listForm.addEventListener('submit', addList);
+            ui.listInput.addEventListener('keydown', event => {
+                if (event.key === 'Escape' && !event.isComposing) {hideNewList(); ui.newList.focus();}
+            });
+            ui.todoForm.addEventListener('submit', addTodo);
+            // Enter used to confirm Chinese/Japanese IME composition must not submit.
+            for (const input of [ui.listInput, ui.todoInput]) {
+                input.addEventListener('keydown', event => {
+                    if (event.key === 'Enter' && (event.isComposing || event.keyCode === 229)) event.preventDefault();
+                });
+            }
+            bindRowActions(ui.lists, 'list');
+            bindRowActions(ui.todos, 'todo');
+            document.addEventListener('pointerdown', event => {
+                if (!pendingTodoEdit) return;
+                const text = event.target.closest('.todo-text');
+                if (text?.closest('[data-id]')?.dataset.id !== pendingTodoEdit.id) cancelTodoEdit();
+            });
+            window.addEventListener('pagehide', () => {
+                finishEditing(true);
+                cancelTodoEdit();
+            });
+            renderLists();
+            renderTodos();
+            bindSortable(ui.lists, 'list');
+            bindSortable(ui.todos, 'todo');
+        })();
+    </script>
+</body>
+
+</html>
