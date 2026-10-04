@@ -443,8 +443,7 @@
                 input.value = item[textKey(type)];
                 input.setAttribute('aria-label', type === 'list' ? 'Edit list name' : 'Edit todo');
                 input.autocomplete = 'off';
-                const editController = new AbortController();
-                editing = {type, item, input, label, editController};
+                editing = {type, item, input, label};
                 label.replaceWith(input);
                 input.addEventListener('keydown', event => {
                     if (event.isComposing || event.keyCode === 229) return;
@@ -453,17 +452,16 @@
                         finishEditing(event.key === 'Enter');
                         label.focus();
                     }
-                }, {signal: editController.signal});
-                input.addEventListener('blur', () => finishEditing(true), {signal: editController.signal});
+                });
+                input.addEventListener('blur', () => finishEditing(true));
                 input.focus();
                 input.select();
             }
 
             function finishEditing(save) {
                 if (!editing) return;
-                const {type, item, input, label, editController} = editing;
+                const {type, item, input, label} = editing;
                 editing = null; // Replacing a focused input may trigger another blur.
-                editController.abort();
                 const key = textKey(type);
                 const value = input.value.trim();
                 if (save && value) {
