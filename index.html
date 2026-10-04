@@ -217,8 +217,7 @@
                 newList: $('new-list-button'), listForm: $('new-list-form'), listInput: $('new-list-name'),
                 todoForm: $('new-todo-form'), todoInput: $('new-todo-text')
             };
-            const controller = new AbortController();
-            const listen = (target, event, handler) => target.addEventListener(event, handler, {signal: controller.signal});
+            const listen = (target, event, handler) => target.addEventListener(event, handler);
             const sortables = new Set();
             let editing = null;
             let suppressClicksUntil = 0;
@@ -443,8 +442,7 @@
                 input.value = item[textKey(type)];
                 input.setAttribute('aria-label', type === 'list' ? 'Edit list name' : 'Edit todo');
                 input.autocomplete = 'off';
-                const editController = new AbortController();
-                editing = {type, item, input, label, editController};
+                editing = {type, item, input, label};
                 label.replaceWith(input);
                 input.addEventListener('keydown', event => {
                     if (event.isComposing || event.keyCode === 229) return;
@@ -453,17 +451,16 @@
                         finishEditing(event.key === 'Enter');
                         label.focus();
                     }
-                }, {signal: editController.signal});
-                input.addEventListener('blur', () => finishEditing(true), {signal: editController.signal});
+                });
+                input.addEventListener('blur', () => finishEditing(true));
                 input.focus();
                 input.select();
             }
 
             function finishEditing(save) {
                 if (!editing) return;
-                const {type, item, input, label, editController} = editing;
+                const {type, item, input, label} = editing;
                 editing = null; // Replacing a focused input may trigger another blur.
-                editController.abort();
                 const key = textKey(type);
                 const value = input.value.trim();
                 if (save && value) {
@@ -581,11 +578,10 @@
             listen(document, 'visibilitychange', () => {
                 if (document.hidden) cancelTodoEdit();
             });
-            listen(window, 'pagehide', event => {
+            listen(window, 'pagehide', () => {
                 finishEditing(true);
                 cancelTodoEdit();
                 stopSortables();
-                if (!event.persisted) controller.abort();
             });
             listen(window, 'pageshow', event => {
                 if (event.persisted) startSortables();
@@ -595,17 +591,13 @@
             startSortables();
         })();
     </script>
-    <script src="https://cdn.jsdelivr.net/npm/animejs@4.5.0/dist/bundles/anime.umd.min.js"></script>
     <script id="click-fireworks">
         (() => {
             'use strict';
 
-            // Re-evaluating this script replaces the effect, including all its listeners.
-            const instanceKey = Symbol.for('little-notes.click-fireworks');
-            window[instanceKey]?.destroy();
-            const anime = window.anime;
-            if (typeof anime?.createTimeline !== 'function' || typeof anime?.utils?.random !== 'function') return;
-            const random = anime.utils.random;
+            const random = (min, max) => Math.floor(Math.random() * (max - min + 1) + min);
+            const lerp = (from, to, progress) => from + (to - from) * progress;
+            const outExpo = progress => progress === 1 ? 1 : 1 - 2 ** (-10 * progress);
 
             const canvas = document.createElement('canvas');
             canvas.className = 'click-fireworks';
@@ -635,15 +627,10 @@
                 ctx.clearRect(0, 0, width, height);
             }
 
-            function release(burst) {
-                burst.animation.cancel();
-                bursts.delete(burst);
-            }
-
             function stop() {
                 if (frame !== null) window.cancelAnimationFrame(frame);
                 frame = null;
-                for (const burst of bursts) release(burst);
+                bursts.clear();
                 clear();
             }
 
@@ -653,24 +640,29 @@
                 for (const burst of bursts) {
                     if (burst.startedAt === null) burst.startedAt = now;
                     const elapsed = now - burst.startedAt;
-                    if (elapsed >= burst.animation.duration) {
-                        release(burst);
+                    if (elapsed >= burst.duration) {
+                        bursts.delete(burst);
                         continue;
                     }
-                    // Paused timelines share one on-demand RAF; anime keeps no running instances.
-                    burst.animation.seek(elapsed, true);
+                    const progress = outExpo(Math.min(elapsed / burst.particleDuration, 1));
                     for (const particle of burst.particles) {
                         ctx.beginPath();
-                        ctx.arc(particle.x, particle.y, particle.radius, 0, Math.PI * 2);
+                        ctx.arc(
+                            lerp(burst.x, particle.endX, progress),
+                            lerp(burst.y, particle.endY, progress),
+                            lerp(particle.radius, 0.1, progress), 0, Math.PI * 2
+                        );
                         ctx.fillStyle = particle.color;
                         ctx.fill();
                     }
                     const circle = burst.circle;
-                    if (circle.alpha > 0 && circle.lineWidth > 0) {
-                        ctx.globalAlpha = circle.alpha;
+                    const alpha = lerp(0.6, 0, Math.min(elapsed / circle.alphaDuration, 1));
+                    if (alpha > 0) {
+                        const circleProgress = outExpo(Math.min(elapsed / circle.duration, 1));
+                        ctx.globalAlpha = alpha;
                         ctx.beginPath();
-                        ctx.arc(circle.x, circle.y, circle.radius, 0, Math.PI * 2);
-                        ctx.lineWidth = circle.lineWidth;
+                        ctx.arc(burst.x, burst.y, lerp(0.1, circle.radius, circleProgress), 0, Math.PI * 2);
+                        ctx.lineWidth = lerp(6, 0, circleProgress);
                         ctx.strokeStyle = '#00FFFF';
                         ctx.stroke();
                         ctx.globalAlpha = 1;
@@ -695,30 +687,16 @@
                 const particles = Array.from({length: 30}, () => {
                     const color = colors[random(0, colors.length - 1)];
                     const radius = random(12, 26);
-                    const angle = random(0, 360) * Math.PI / 180;
-                    const distance = random(30, 130) * (random(0, 1) ? 1 : -1);
-                    return {x, y, color, radius, endX: x + distance * Math.cos(angle), endY: y + distance * Math.sin(angle)};
+                    const angle = random(0, 359) * Math.PI / 180;
+                    const distance = random(30, 130);
+                    return {color, radius, endX: x + distance * Math.cos(angle), endY: y + distance * Math.sin(angle)};
                 });
-                const circle = {x, y, radius: 0.1, alpha: 0.6, lineWidth: 6};
-                const animation = anime.createTimeline({autoplay: false, defaults: {composition: 'none'}})
-                    .add(particles, {
-                        x: particle => particle.endX,
-                        y: particle => particle.endY,
-                        radius: 0.1,
-                        duration: random(1600, 2400),
-                        ease: 'outExpo'
-                    }, 0)
-                    .add(circle, {
-                        radius: random(60, 120),
-                        lineWidth: 0,
-                        alpha: {to: 0, ease: 'linear', duration: random(600, 800)},
-                        duration: random(1200, 1800),
-                        ease: 'outExpo'
-                    }, 0);
+                const particleDuration = random(1600, 2400);
+                const circle = {radius: random(60, 120), alphaDuration: random(600, 800), duration: random(1200, 1800)};
 
                 // Bound retained particles even under sustained, unusually rapid clicking.
-                if (bursts.size >= maxBursts) release(bursts.values().next().value);
-                bursts.add({particles, circle, animation, startedAt: null});
+                if (bursts.size >= maxBursts) bursts.delete(bursts.values().next().value);
+                bursts.add({x, y, particles, particleDuration, circle, duration: Math.max(particleDuration, circle.duration), startedAt: null});
                 if (frame === null) frame = window.requestAnimationFrame(draw);
             }
 
@@ -727,11 +705,8 @@
                 stop();
                 canvas.remove();
                 canvas.width = canvas.height = 0;
-                if (window[instanceKey] === instance) delete window[instanceKey];
             }
 
-            const instance = {destroy};
-            window[instanceKey] = instance;
             document.body.append(canvas);
             resize();
             // Only click: touch/pen compatibility mouse events cannot trigger a second burst.
