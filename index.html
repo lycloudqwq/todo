@@ -217,8 +217,7 @@
                 newList: $('new-list-button'), listForm: $('new-list-form'), listInput: $('new-list-name'),
                 todoForm: $('new-todo-form'), todoInput: $('new-todo-text')
             };
-            const controller = new AbortController();
-            const listen = (target, event, handler) => target.addEventListener(event, handler, {signal: controller.signal});
+            const listen = (target, event, handler) => target.addEventListener(event, handler);
             const sortables = new Set();
             let editing = null;
             let suppressClicksUntil = 0;
@@ -579,11 +578,10 @@
             listen(document, 'visibilitychange', () => {
                 if (document.hidden) cancelTodoEdit();
             });
-            listen(window, 'pagehide', event => {
+            listen(window, 'pagehide', () => {
                 finishEditing(true);
                 cancelTodoEdit();
                 stopSortables();
-                if (!event.persisted) controller.abort();
             });
             listen(window, 'pageshow', event => {
                 if (event.persisted) startSortables();
