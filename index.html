@@ -595,9 +595,6 @@
         (() => {
             'use strict';
 
-            // Re-evaluating this script replaces the effect, including all its listeners.
-            const instanceKey = Symbol.for('little-notes.click-fireworks');
-            window[instanceKey]?.destroy();
             const random = (min, max) => Math.floor(Math.random() * (max - min + 1) + min);
             const lerp = (from, to, progress) => from + (to - from) * progress;
             const outExpo = progress => progress === 1 ? 1 : 1 - 2 ** (-10 * progress);
@@ -690,8 +687,8 @@
                 const particles = Array.from({length: 30}, () => {
                     const color = colors[random(0, colors.length - 1)];
                     const radius = random(12, 26);
-                    const angle = random(0, 360) * Math.PI / 180;
-                    const distance = random(30, 130) * (random(0, 1) ? 1 : -1);
+                    const angle = random(0, 359) * Math.PI / 180;
+                    const distance = random(30, 130);
                     return {color, radius, endX: x + distance * Math.cos(angle), endY: y + distance * Math.sin(angle)};
                 });
                 const particleDuration = random(1600, 2400);
@@ -708,11 +705,8 @@
                 stop();
                 canvas.remove();
                 canvas.width = canvas.height = 0;
-                if (window[instanceKey] === instance) delete window[instanceKey];
             }
 
-            const instance = {destroy};
-            window[instanceKey] = instance;
             document.body.append(canvas);
             resize();
             // Only click: touch/pen compatibility mouse events cannot trigger a second burst.
