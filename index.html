@@ -26,6 +26,8 @@
     .list-row { position: relative; display: flex; align-items: center; gap: 7px; padding: 3px 8px; margin: 5px 4px; border: 1px solid transparent; border-radius: 9px; min-height: 36px; transition: background .15s, border-color .15s; }
     .list-row:hover { background: var(--color-slate-100); }
     .list-row.is-selected { background: var(--color-cyan-100); border-color: var(--color-cyan-200); }
+    .list-row.is-selected:hover { background: var(--color-cyan-200); }
+    .list-row.is-todo-drop-target { background: var(--color-cyan-200); outline: 2px solid var(--color-cyan-600); outline-offset: -2px; }
     .list-name { display: block; width: 100%; padding: 2px 0; text-align: left; color: var(--color-slate-700); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .list-name:hover { color: var(--color-cyan-700); }
     .is-selected .list-name { color: var(--color-cyan-700); font-weight: 600; }
@@ -219,6 +221,8 @@
             };
             const listen = (target, event, handler) => target.addEventListener(event, handler);
             const sortables = new Set();
+            let todoDrag = null;
+            let todoDropTarget = null;
             let editing = null;
             let suppressClicksUntil = 0;
             const TODO_EDIT_DELAY = 120;
@@ -503,6 +507,45 @@
             }
 
             // 5. SortableJS owns drag handling, animation, placeholders, and scrolling.
+            function setTodoDropTarget(row) {
+                if (row === todoDropTarget) return;
+                todoDropTarget?.classList.remove('is-todo-drop-target');
+                todoDropTarget = row;
+                todoDropTarget?.classList.add('is-todo-drop-target');
+            }
+
+            function todoDropTargetAt(event) {
+                if (!todoDrag || todoDrag.cancelled) return null;
+                const point = event?.changedTouches?.[0] || event;
+                if (!Number.isFinite(point?.clientX) || !Number.isFinite(point?.clientY)) return null;
+                const row = document.elementFromPoint(point.clientX, point.clientY)?.closest('.list-row');
+                return row?.parentElement === ui.lists && row.dataset.id !== todoDrag.sourceListId ? row : null;
+            }
+
+            function trackTodoDrop(event) {
+                if (!todoDrag) return;
+                const row = todoDropTargetAt(event);
+                setTodoDropTarget(row);
+                if (row && event.type === 'dragover') {
+                    event.preventDefault(); // Allow a native drop on a sidebar row.
+                    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+                }
+            }
+
+            function clearTodoDrag() {
+                setTodoDropTarget(null);
+                todoDrag = null;
+            }
+
+            function moveTodo(drag, targetId) {
+                const source = findList(drag.sourceListId);
+                const target = findList(targetId);
+                const index = source?.todos.findIndex(todo => todo.id === drag.id) ?? -1;
+                if (!target || target === source || index < 0) return;
+                target.todos.unshift(source.todos.splice(index, 1)[0]);
+                saveState();
+            }
+
             // Instances stay on the containers when their rows are re-rendered.
             function bindSortable(container, type) {
                 if (!window.Sortable) {
@@ -520,15 +563,37 @@
                     delayOnTouchOnly: true,
                     touchStartThreshold: 4,
                     fallbackTolerance: 4,
+                    fallbackOnBody: type === 'todo',
                     // The full row, including its text, can be dragged. Keep dedicated
                     // controls and active editors available for their normal actions.
                     filter: event => !!editing || !!event.target.closest('input, [data-action="delete"], [data-action="toggle"]'),
                     preventOnFilter: false,
-                    onStart() {
-                        if (type === 'todo') cancelTodoEdit();
+                    onStart(event) {
+                        if (type === 'todo') {
+                            cancelTodoEdit();
+                            clearTodoDrag();
+                            todoDrag = {id: event.item.dataset.id, sourceListId: state.selectedListId, cancelled: false};
+                        }
                     },
                     onEnd(event) {
                         suppressClicksUntil = Date.now() + 150;
+                        if (type === 'todo' && todoDrag) {
+                            const drag = todoDrag;
+                            const release = event.originalEvent;
+                            const released = ['drop', 'pointerup', 'mouseup', 'touchend'].includes(release?.type);
+                            // Recheck the release position; a previously hovered list may be stale.
+                            const target = released ? todoDropTargetAt(release) : null;
+                            clearTodoDrag();
+                            if (target) {
+                                moveTodo(drag, target.dataset.id);
+                                renderTodos();
+                                return;
+                            }
+                            if (!released || drag.cancelled || drag.sourceListId !== state.selectedListId) {
+                                renderTodos();
+                                return;
+                            }
+                        }
                         if (event.oldDraggableIndex === event.newDraggableIndex) return;
                         const items = type === 'list' ? state.lists : activeList()?.todos;
                         if (!items) return;
@@ -549,6 +614,7 @@
             }
 
             function stopSortables() {
+                clearTodoDrag();
                 for (const sortable of sortables) sortable.destroy();
                 sortables.clear();
             }
@@ -569,6 +635,16 @@
             }
             bindRowActions(ui.lists, 'list');
             bindRowActions(ui.todos, 'todo');
+            document.addEventListener('dragover', trackTodoDrop, {capture: true});
+            for (const type of ['pointermove', 'touchmove']) {
+                document.addEventListener(type, trackTodoDrop, {capture: true, passive: true});
+            }
+            listen(document, 'keydown', event => {
+                if (event.key === 'Escape' && todoDrag) {
+                    todoDrag.cancelled = true;
+                    setTodoDropTarget(null);
+                }
+            });
             listen(ui.todos, 'mousedown', event => {
                 if (event.button === 0 && event.detail > 1) cancelTodoEdit();
             });
@@ -576,7 +652,11 @@
                 if (pendingTodoEdit && !pendingTodoEdit.text.contains(event.target)) cancelTodoEdit();
             });
             listen(document, 'visibilitychange', () => {
-                if (document.hidden) cancelTodoEdit();
+                if (document.hidden) {
+                    cancelTodoEdit();
+                    if (todoDrag) todoDrag.cancelled = true;
+                    setTodoDropTarget(null);
+                }
             });
             listen(window, 'pagehide', () => {
                 finishEditing(true);
